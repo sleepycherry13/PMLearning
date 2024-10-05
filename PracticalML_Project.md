@@ -1,0 +1,93 @@
+# Load necessary libraries
+library(lattice)      # For enhanced data visualization
+library(ggplot2)      # For creating static graphics
+library(caret)        # For training and evaluating models
+library(kernlab)      # For SVM models
+library(rattle)       # For decision tree visualizations
+library(corrplot)     # For correlation matrix visualizations
+
+# Set a random seed for reproducibility
+set.seed(1234)
+
+# Load the datasets
+train_data <- read.csv("./data/pml-training.csv")  # Load training dataset
+test_data <- read.csv("./data/pml-testing.csv")      # Load testing dataset
+
+# Data Cleaning
+# Remove columns with more than 90% missing values
+train_data <- train_data[, colMeans(is.na(train_data)) < 0.9]
+
+# Remove irrelevant metadata columns (e.g., identifiers, timestamps)
+train_data <- train_data[, -c(1:7)]
+
+# Remove zero variance variables, as they do not contribute to the model
+zero_variance_cols <- nearZeroVar(train_data)
+train_data <- train_data[, -zero_variance_cols]
+
+# Show the dimensions of the cleaned training data
+print(dim(train_data))
+
+# Split the training data into training and validation sets
+set.seed(1234) # Ensure reproducibility
+train_index <- createDataPartition(y=train_data$classe, p=0.7, list=FALSE)
+train_set <- train_data[train_index, ]  # Training set (70%)
+valid_set <- train_data[-train_index, ]  # Validation set (30%)
+
+# Model Training
+print("Training models, please wait...")
+
+# Set up training control with cross-validation
+control <- trainControl(method="cv", number=3, verboseIter=FALSE)
+
+# Decision Tree Model
+model_tree <- train(classe ~ ., data=train_set, method="rpart", trControl=control, tuneLength=5)
+pred_tree <- predict(model_tree, valid_set)  # Make predictions on validation set
+confusion_tree <- confusionMatrix(pred_tree, factor(valid_set$classe))  # Evaluate performance
+fancyRpartPlot(model_tree$finalModel)  # Visualize the decision tree
+
+# Random Forest Model
+model_rf <- train(classe ~ ., data=train_set, method="rf", trControl=control, tuneLength=5)
+pred_rf <- predict(model_rf, valid_set)  # Make predictions on validation set
+confusion_rf <- confusionMatrix(pred_rf, factor(valid_set$classe))  # Evaluate performance
+
+# Gradient Boosting Model (GBM)
+model_gbm <- train(classe ~ ., data=train_set, method="gbm", trControl=control, tuneLength=5, verbose=FALSE)
+pred_gbm <- predict(model_gbm, valid_set)  # Make predictions on validation set
+confusion_gbm <- confusionMatrix(pred_gbm, factor(valid_set$classe))  # Evaluate performance
+
+# Support Vector Machine (SVM) Model
+model_svm <- train(classe ~ ., data=train_set, method="svmLinear", trControl=control, tuneLength=5, verbose=FALSE)
+pred_svm <- predict(model_svm, valid_set)  # Make predictions on validation set
+confusion_svm <- confusionMatrix(pred_svm, factor(valid_set$classe))  # Evaluate performance
+
+# Model Evaluation
+print("Evaluating model performance...")
+
+# Gather accuracy and out-of-sample error rates
+model_names <- c("Decision Tree", "Random Forest", "GBM", "SVM")
+accuracies <- round(c(
+   confusion_tree$overall[1],
+   confusion_rf$overall[1],
+   confusion_gbm$overall[1],
+   confusion_svm$overall[1]
+), 3)
+
+out_of_sample_errors <- 1 - accuracies  # Calculate out-of-sample error rates
+
+# Create a summary data frame of model performance
+model_performance <- data.frame(
+   Accuracy = accuracies,
+   OutOfSampleError = out_of_sample_errors,
+   row.names = model_names
+)
+
+# Print the model performance summary
+print(model_performance)
+
+# Use the best model (Random Forest) to make predictions on the test set
+print("Predicting outcomes for the test set...")
+predictions <- predict(model_rf, test_data)  # Make predictions on the test dataset
+print(predictions)  # Display predictions
+
+# Final message
+print("Model training and prediction complete.")
